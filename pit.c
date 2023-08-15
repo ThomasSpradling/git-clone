@@ -16,9 +16,20 @@ int pit_init() {
     exit(1);
   }
 
+  // opens .index and .prev files
   FILE* findex = fopen(".pit/.index", "w");
-  fclose(findex);
+  FILE* fprev = fopen(".pit/.prev", "w");
+  if (findex == NULL || fprev == NULL) {
+    fprintf(stderr, "Could not open necessary files.");
+  }
 
+  // adds id of first commit to `.prev`
+  const char *id = "0000000000000000000000000000000000000000";
+  fwrite(id, 1, strlen(id) + 1, fprev);
+
+  // closes files
+  fclose(findex);
+  fclose(fprev);
   return 0;
 }
 
@@ -30,7 +41,44 @@ int pit_init() {
  * >> ERROR: File <filename> already added
  * 
  */
-int pit_add(const char *filanem) {
+int pit_add(const char *filename) {
+  // Creates a newindex to later copy into for atomicity purposes
+  FILE *findex = fopen(".pit/.index", "r");
+  FILE *fnewindex = fopen(".pit/.newindex", "w");
+
+  if (findex == NULL || fnewindex == NULL) {
+    fprintf(stderr, "Could not open necessary files.");
+    return 1;
+  }
+
+  // goes line-by-line through .index
+  char line[FILENAME_SIZE];
+  while(fgets(line, sizeof(line), findex)) {
+    strtok(line, "\n"); // remove \n from the line
+
+    // if we've seen this file before, stop process and throw error
+    if (strcmp(line, filename) == 0) {
+      fprintf(stderr, "ERROR: File %s already added!\n", filename);
+      
+      fclose(findex);
+      fclose(fnewindex);
+      // delete .newindex
+      if (unlink(".pit/.newindex")) {
+        fprintf(stderr, "ERROR: Failed to unlink file!\n");
+      }
+      return 3;
+    }
+
+    fprintf(fnewindex, "%s\n", line);
+  }
+  fprintf(fnewindex, "%s\n", filename);
+  fclose(findex);
+  fclose(fnewindex);
+  
+  if (rename(".pit/.newindex", ".pit/.index")) {
+    fprintf(stderr, "ERROR: Failed to rename file!\n");
+    return 3;
+  }
   return 0;
 }
 
