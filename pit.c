@@ -83,9 +83,34 @@ int pit_add(const char *filename) {
 }
 
 /* pit rm <filename>
- * 
+ * Removes the specified file from `.index`
  */
 int pit_rm(const char *filename) {
+  FILE *findex = fopen(".pit/.index", "r");
+  FILE *fnewindex = fopen(".pit/.newindex", "w");
+
+  int has_found_value = 0;
+  char line[FILENAME_SIZE];
+  while(fgets(line, sizeof(line), findex)) {
+    strtok(line, "\n");
+    if (strcmp(filename, line) != 0) {
+      fprintf(fnewindex, "%s\n", line);
+    } else {
+      has_found_value = 1;
+    }
+  }
+  fclose(findex);
+  fclose(fnewindex);
+
+  if (rename(".pit/.newindex", ".pit/.index")) {
+    fprintf(stderr, "ERROR: Failed to rename file!\n");
+    return 3;
+  }
+
+  if (!has_found_value) {
+    fprintf(stderr, "ERROR: File already not tracked and cannot be removed.\n");
+    return 1;
+  }
   return 0;
 }
 
@@ -97,9 +122,26 @@ int pit_commit(const char *message) {
 }
 
 /* pit status
- * 
+ * Goes through .index to print each file
  */
 int pit_status() {
+  FILE *findex = fopen(".pit/.index", "r");
+  if (findex == NULL) {
+    fprintf(stderr, "Could not open necessary files.");
+    return 1;
+  }
+  
+  fprintf(stdout, "Tracked files:\n\n");
+
+  int count = 0;
+  char line[FILENAME_SIZE];
+  while (fgets(line, sizeof(line), findex)) {
+    strtok(line, "\n");
+    fprintf(stdout, "\t%s\n", line);
+    count++;
+  }
+
+  fprintf(stdout, "\n%d file(s) total.\n", count);
   return 0;
 }
 
