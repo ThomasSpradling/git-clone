@@ -20,6 +20,6 @@ Available commands:
   - `pit checkout -b <newbranch>`: Start a new branch at the current commit.
 
 ## Progress
-- [x] ~~Initialization and tracking: `init`, `add`, `status`, `rm`~~
+- [x] ~~Initialization and tracking:~~ `init`, `add`, `status`, `rm`
 - [ ] Committing: `commit`, `log`
 - [ ] Branching: `branch`, `checkout`
