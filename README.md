@@ -4,8 +4,6 @@ Here is a sample implementation of `pit`, a place where you can throw snapshots 
 This project is entirely present for education purposes to understand the inner-workings of more fully-featured `git`.
 
 ## Installation
-
-## Usage
 Start by cloning this repo and moving into the directory:
 ```bash
 git clone https://github.com/ThomasSpradling/git-clone.git
@@ -16,6 +14,8 @@ From within this directory, run the following to leverage Makefile to build an e
 make pit
 ```
 Now to run any command with `pit`, one can just use `./pit` from bash as in `./pit init`.
+
+## Usage
 
 Available commands:
 - `pit init`: Creates a new repository.
