@@ -3,89 +3,143 @@
 #include <stdarg.h>
 #include <string.h>
 #include <uuid/uuid.h>
+#include "pit.h"
 
-char* generate_random_id() {
-    uuid_t bin_uuid;
-    char* buffer = (char*) malloc(33);  // 32 characters for UUID + null terminator
+void generate_random_id(char* buffer, size_t size) {
+  uuid_t bin_uuid;
 
-    if (!buffer) {
-        perror("Memory allocation failed for UUID");
-        exit(1);
-    }
-
-    uuid_generate(bin_uuid);
-
-    snprintf(buffer, 33, "%08x%04x%04x%04x%012x", 
-        *((unsigned int*)(bin_uuid)),
-        *((unsigned int*)(bin_uuid + 4)),
-        *((unsigned int*)(bin_uuid + 6)),
-        *((unsigned int*)(bin_uuid + 8)),
-        *((unsigned long*)(bin_uuid + 10))
-    );
-
-    return buffer;
-}
-
-int copy_file(const char *source_path, const char *dest_path) {
-    char buffer[1024];
-    size_t bytes;
-
-    FILE *source = fopen(source_path, "r");
-    FILE *dest = fopen(dest_path, "w");
-
-    if (!source || !dest) {
-        fprintf(stderr, "ERROR: Cannot copy files!");
-        return 1;
-    }
-
-    while ((bytes = fread(buffer, 1, sizeof(buffer), source)) > 0) {
-        fwrite(buffer, 1, bytes, dest);
-    }
-
-    fclose(source);
-    fclose(dest);
-    return 0;
-}
-
-void _read_string(char *filename, char *str, int size) {
-  FILE *file = fopen(filename, "r");
-  if (!file) {
-    fprintf(stderr, "ERROR: Cannot view commit history!");
+  // Ensure the provided buffer has enough space
+  if (size < 33) {
+    fprintf(stderr, "ERROR: Buffer not large enough for UUID");
     exit(1);
   }
-  
-  // Read up to 'size' characters or until EOF, whichever comes first
+
+  uuid_generate(bin_uuid);
+
+  snprintf(buffer, 33, "%08x%04x%04x%04x%012x", 
+    *((unsigned int*)(bin_uuid)),
+    *((unsigned int*)(bin_uuid + 4)),
+    *((unsigned int*)(bin_uuid + 6)),
+    *((unsigned int*)(bin_uuid + 8)),
+    *((unsigned long*)(bin_uuid + 10))
+  );
+}
+
+char* concat_strings(int count, ...) {
+  va_list args;
+  int total_length = 0;
+
+  // First, compute the total length required for the concatenated string
+  va_start(args, count);
+  for (int i = 0; i < count; i++) {
+    total_length += strlen(va_arg(args, char*));
+  }
+  va_end(args);
+
+  // Allocate memory for the result (plus one for the null terminator)
+  char* result = malloc(total_length + 1);
+  if (!result) {
+    perror("Memory allocation failed");
+    exit(1);
+  }
+  result[0] = '\0'; // Start with an empty string
+
+  // Then, concatenate each string
+  va_start(args, count);
+  for (int i = 0; i < count; i++) {
+    strcat(result, va_arg(args, char*));
+  }
+  va_end(args);
+
+  return result;
+}
+
+// File system helper methods
+
+/* Opens file with error handling. */
+static FILE *fs_open(const char *filename, const char *mode) {
+  if (filename == NULL || strlen(filename) > FILENAME_SIZE) {
+    fprintf(stderr, "ERROR: Invalid file name!\n");
+    exit(1);
+  }
+  FILE *findex = fopen(filename, mode);
+  if (!findex) {
+    fprintf(stderr, "ERROR: Could not open file %s!\n", filename);
+    exit(1);
+  }
+  return findex;
+}
+
+/* Makes a directory under name `dirname`. */
+static void fs_mkdir(const char *dirname) {
+  if (dirname == NULL || strlen(dirname) > FILENAME_SIZE) {
+    fprintf(stderr, "ERROR: Invalid file name!\n");
+    exit(1);
+  }
+  if(mkdir(dirname, 0777)) {
+    fprintf(stderr, "ERROR: Creating directory %s failed.\n", dirname);
+    exit(1);
+  }
+}
+
+/* If string is not null, it replaces contents of `filename` with that string.
+ * Creates file if necessary.
+ */
+static void fs_write_file(const char *filename, const char *string) {
+  FILE * findex = fs_open(filename, "w");
+  if (string) {
+    fprintf(findex, "%s", string);
+  }
+  fclose(findex);
+}
+
+/* Reads entire file and returns it as a string. */
+void fs_read_file(char *filename, char *str, int size) {
+  FILE *file = fs_open(filename, "r");
+
   size_t actual_size = fread(str, 1, size, file);
-  str[actual_size] = '\0';  // Properly null-terminate the string
+  str[actual_size] = '\0';
   
   fclose(file);
 }
 
-char* concat_strings(int count, ...) {
-    va_list args;
-    int total_length = 0;
+/* Removes file with name `filename`. */
+static void fs_rm(const char *filename) {
+  if (filename == NULL || strlen(filename) > FILENAME_SIZE) {
+    fprintf(stderr, "ERROR: Invalid file name!\n");
+    exit(1);
+  }
+  if (unlink(".pit/.newindex")) {
+    fprintf(stderr, "ERROR: Could not delete file %s!\n", filename);
+    exit(1);
+  }
+}
 
-    // First, compute the total length required for the concatenated string
-    va_start(args, count);
-    for (int i = 0; i < count; i++) {
-        total_length += strlen(va_arg(args, char*));
-    }
-    va_end(args);
+/* Moves file from src to dest. */
+static void fs_mv(const char *src, const char *dest) {
+  if (!src || !dest || strlen(src) > FILENAME_SIZE || strlen(dest) > FILENAME_SIZE) {
+    fprintf(stderr, "ERROR: Invalid file name(s)!\n");
+    exit(1);
+  }
+  if (rename(".pit/.newindex", ".pit/.index")) {
+    fprintf(stderr, "ERROR: Failed to rename file from %s to %s!\n", src, dest);
+    exit(1);
+  }
+}
 
-    // Allocate memory for the result (plus one for the null terminator)
-    char* result = malloc(total_length + 1);
-    if (!result) {
-        perror("Memory allocation failed");
-        exit(1);
-    }
-    result[0] = '\0'; // Start with an empty string
+/* Copies file from src to dest. */
+int fs_cp(const char *src, const char *dest) {
+  char buffer[1024];
+  size_t bytes;
 
-    // Then, concatenate each string
-    va_start(args, count);
-    for (int i = 0; i < count; i++) {
-        strcat(result, va_arg(args, char*));
-    }
-    va_end(args);
+  FILE *source = fs_open(src, "r");
+  FILE *dest = fs_open(dest, "w");
 
-    return result;
+  while ((bytes = fread(buffer, 1, sizeof(buffer), source)) > 0) {
+    fwrite(buffer, 1, bytes, dest);
+  }
+
+  fclose(source);
+  fclose(dest);
+  return 0;
 }

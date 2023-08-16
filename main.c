@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
   // pit add <filename>
   if (strcmp(argv[1], "add") == 0) {
     if (argc < 3 || !is_valid_filename(argv[2])) {
-      fprintf(stderr, "ERROR: No or invalid filname given\n");
+      fprintf(stderr, "ERROR: No or invalid filname given.\n");
       return 1;
     }
 
@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
   // pit rm <filename>
   if (strcmp(argv[1], "rm") == 0) {
     if (argc < 3 || !is_valid_filename(argv[2])) {
-      fprintf(stderr, "ERROR: No or invalid filname given\n");
+      fprintf(stderr, "ERROR: No or invalid filname given.\n");
       return 1;
     }
 
@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
   // pit commit -m <message>
   if (strcmp(argv[1], "commit") == 0) {
     if (argc < 4 || strcmp(argv[2], "-m") != 0) {
-      fprintf(stderr, "ERROR: Must have a commit message (-m <message>)\n");
+      fprintf(stderr, "ERROR: Must have a commit message (-m <message>).\n");
       return 1;
     }
 

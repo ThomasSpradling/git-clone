@@ -6,34 +6,18 @@
 #include "pit.h"
 #include "utils.h"
 
-/* `pit init`
+/* Usage: `pit init`
+ *
  * Creates a `.pit` directory with created `.index` and `.prev` files
  */
 int pit_init() {
-  int result = mkdir(".pit", 0777);
-  if (result != 0) {
-    fprintf(stderr, "Creating directory `.pit` failed");
-    return 1;
-  }
-
-  // opens .index and .prev files
-  FILE* findex = fopen(".pit/.index", "w");
-  FILE* fprev = fopen(".pit/.prev", "w");
-  if (findex == NULL || fprev == NULL) {
-    fprintf(stderr, "Could not open necessary files.");
-  }
-
-  // adds id of first commit to `.prev`
-  const char *id = "00000000000000000000000000000000";
-  fwrite(id, 1, strlen(id) + 1, fprev);
-
-  // closes files
-  fclose(findex);
-  fclose(fprev);
+  fs_mkdir(".pit");
+  fs_write_file(".pit/.index", NULL);
+  fs_write_file(".pit/.prev", BASE_COMMIT_ID);
   return 0;
 }
 
-/* `pit add <filename>`
+/* Usage: `pit add <filename>`
  *
  * Appends filename to list in `.index`
  * 
@@ -43,152 +27,124 @@ int pit_init() {
  */
 int pit_add(const char *filename) {
   // Creates a newindex to later copy into for atomicity purposes
-  FILE *findex = fopen(".pit/.index", "r");
-  FILE *fnewindex = fopen(".pit/.newindex", "w");
+  FILE *findex = fs_open(".pit/.index", "r");
+  FILE *fnewindex = fs_open(".pit/.newindex", "w");
 
-  if (findex == NULL || fnewindex == NULL) {
-    fprintf(stderr, "Could not open necessary files.");
-    return 1;
-  }
-
-  // goes line-by-line through .index
-  char line[FILENAME_SIZE];
+  // Goes line-by-line through .index
+  char line[FILENAME_SIZE + 1];
   while(fgets(line, sizeof(line), findex)) {
     strtok(line, "\n"); // remove \n from the line
 
     // if we've seen this file before, stop process and throw error
     if (strcmp(line, filename) == 0) {
-      fprintf(stderr, "ERROR: File %s already added!\n", filename);
-      
+      fprintf(stderr, "ERROR: File %s is already tracked!\n", filename);
+
       fclose(findex);
       fclose(fnewindex);
-      // delete .newindex
-      if (unlink(".pit/.newindex")) {
-        fprintf(stderr, "ERROR: Failed to unlink file!\n");
-      }
+      fs_rm(".pit/.newindex");
+      
       return 1;
     }
 
     fprintf(fnewindex, "%s\n", line);
   }
   fprintf(fnewindex, "%s\n", filename);
+
   fclose(findex);
   fclose(fnewindex);
-  
-  if (rename(".pit/.newindex", ".pit/.index")) {
-    fprintf(stderr, "ERROR: Failed to rename file!\n");
-    return 1;
-  }
+  fs_mv(".pit/.newindex", ".pit/.index");
+
   return 0;
 }
 
-/* pit rm <filename>
- * Removes the specified file from `.index`
+/* Usage: `pit rm <filename>`
+ *
+ * Removes the specified filename from `.index`
+ * 
+ * Errors:
+ * >> ERROR: ERROR: File <filename> already not tracked and cannot be removed.
  */
 int pit_rm(const char *filename) {
-  FILE *findex = fopen(".pit/.index", "r");
-  FILE *fnewindex = fopen(".pit/.newindex", "w");
+  FILE *findex = fs_open(".pit/.index", "r");
+  FILE *fnewindex = fs_open(".pit/.newindex", "w");
 
   int has_found_value = 0;
-  char line[FILENAME_SIZE];
+
+  char line[FILENAME_SIZE + 1];
   while(fgets(line, sizeof(line), findex)) {
     strtok(line, "\n");
+
     if (strcmp(filename, line) != 0) {
       fprintf(fnewindex, "%s\n", line);
     } else {
       has_found_value = 1;
     }
   }
+
   fclose(findex);
   fclose(fnewindex);
-
-  if (rename(".pit/.newindex", ".pit/.index")) {
-    fprintf(stderr, "ERROR: Failed to rename file!\n");
-    return 1;
-  }
+  fs_mv(".pit/.newindex", ".pit/.index");
 
   if (!has_found_value) {
-    fprintf(stderr, "ERROR: File already not tracked and cannot be removed.\n");
+    fprintf(stderr, "ERROR: File %s already not tracked and cannot be removed.\n", filename);
     return 1;
   }
   return 0;
 }
 
-/* pit commit -m <message>
- * Copies all tracked files into a commit folder along with .prev and .index data
+/* Usage: `pit commit -m <message>`
+ *
+ * Creates new commit folder with a copy of all currently tracked files
+ * and the current .index and .prev files.
  */
 int pit_commit(const char *message) {
   char last_id[COMMIT_ID_BYTES + 1];
-  _read_string(".pit/.prev", last_id, COMMIT_ID_BYTES);
-  last_id[COMMIT_ID_BYTES] = '\0';
+  fs_read_file(".pit/.prev", last_id, COMMIT_ID_BYTES + 1);
   
-  char *next_id = generate_random_id();
+  char next_id[33];
+  generate_random_id(next_id, 33);
 
-  // Create new directory .pit/<new_id>
+  // Create new directory .pit/<new_id> and copy .index and .prev into this directory
   char *new_dir = concat_strings(2, ".pit/", next_id);
-  int result = mkdir(new_dir, 0777);
+  fs_mkdir(new_dir);
 
-  if (result != 0) {
-    fprintf(stderr, "Creating directory in `.pit` failed");
-    return 1;
-  }
+  char *id_index = concat_strings(2, new_dir, "/.index");
+  fs_cp(".pit/.index", id_index);
+  free(id_index);
 
-  // Copy .pit/.index to .pit/<new_id>/.index
-  char *dest_index = concat_strings(2, new_dir, "/.index");
-  copy_file(".pit/.index", dest_index);
-
-  // Copy .pit/.prev to .pit/<new_id>/.prev
-  char *dest_prev = concat_strings(2, new_dir, "/.prev");
-  copy_file(".pit/.prev", dest_prev);
+  char *id_prev = concat_strings(2, new_dir, "/.prev");
+  fs_cp(".pit/.prev", id_prev);
+  free(id_prev);
 
   // Copy files listed in .pit/.index to .pit/<new_id> directory
-  FILE *findex = fopen(".pit/.index", "r");
-  char line[FILENAME_SIZE];
+  FILE *findex = fs_open(".pit/.index", "r");
+  char line[FILENAME_SIZE + 1];
   while (fgets(line, sizeof(line), findex)) {
     strtok(line, "\n");
+
     char *dest_path = concat_strings(3, new_dir, "/", line);
-    copy_file(line, dest_path);
+    fs_cp(line, dest_path);
     free(dest_path);
   }
   fclose(findex);
 
   // Store the commit message in .pit/<new_id>/.message
   char *msg_path = concat_strings(2, new_dir, "/.message");
-  FILE *fmsg = fopen(msg_path, "w");
-  FILE *fprev_overwrite = fopen(".pit/.prev", "w");
-  if (!fmsg || !fprev_overwrite) {
-    fprintf(stderr, "Error opening files.");
-    free(next_id);
-    free(new_dir);
-    free(dest_index);
-    free(dest_prev);
-    free(msg_path);
-    return 1;
-  }
-  fprintf(fmsg, "%s", message);
-  fclose(fmsg);
-
-  fprintf(fprev_overwrite, "%s", next_id);
-
-  // clean up
-  free(next_id);
   free(new_dir);
-  free(dest_index);
-  free(dest_prev);
+
+  fs_write_file(msg_path, message);
+  fs_write_file(".pit/prev", next_id);
   free(msg_path);
 
   return 0;
 }
 
-/* pit status
- * Goes through .index to print each file
+/* Usage: `pit status`
+ *
+ * Prints all currently tracked files.
  */
 int pit_status() {
-  FILE *findex = fopen(".pit/.index", "r");
-  if (findex == NULL) {
-    fprintf(stderr, "Could not open necessary files.");
-    return 1;
-  }
+  FILE *findex = fs_open(".pit/.index", "r");
   
   fprintf(stdout, "Tracked files:\n\n");
 
@@ -196,6 +152,7 @@ int pit_status() {
   char line[FILENAME_SIZE];
   while (fgets(line, sizeof(line), findex)) {
     strtok(line, "\n");
+
     fprintf(stdout, "\t%s\n", line);
     count++;
   }
@@ -204,39 +161,31 @@ int pit_status() {
   return 0;
 }
 
+/* Usage: `pit log`
+ * 
+ * Prints all git commits in order of latest to earliest.
+ */
 int pit_log() {
   char last_id[COMMIT_ID_SIZE + 1];
-  _read_string(".pit/.prev", last_id, COMMIT_ID_SIZE);
+  fs_read_file(".pit/.prev", last_id, COMMIT_ID_SIZE);
 
-  char current_id[COMMIT_ID_SIZE + 1] = "";  // Initialize it with an empty string
+  char current_id[COMMIT_ID_SIZE + 1];
+  while (strcmp(last_id, BASE_COMMIT_ID) != 0) {
+    fprintf(stdout, "commit %s\n", last_id);
 
-  while (strcmp(last_id, "00000000000000000000000000000000") != 0) {
-    // Print the commit's ID
-    printf("commit %s\n", last_id);
-
-    // Compute and read the message associated with that ID
-    char message_path[15 + COMMIT_ID_SIZE];
-    strcpy(message_path, ".pit/");
-    strcat(message_path, last_id);
-    strcat(message_path, "/.message");
-
+    char *message_path = concat_strings(3, ".pit/", last_id, "/.message");
     char current_message[MESSAGE_SIZE + 1];
-    _read_string(message_path, current_message, MESSAGE_SIZE);
-    printf("\t%s\n\n", current_message);  // Print the commit message
+    fs_read_file(message_path, current_message, MESSAGE_SIZE);
+    free(message_path);
 
-    // Compute the path to the previous commit's ID
-    char prev_path[5 + 6 + COMMIT_ID_SIZE + 1];
-    strcpy(prev_path, ".pit/");
-    strcat(prev_path, last_id);
-    strcat(prev_path, "/.prev");
+    fprintf(stdout, "\t%s\n\n", current_message);
 
-    if (access(prev_path, F_OK) == -1) {
-        // The .prev file doesn't exist, which means we've reached the initial commit
-        break;
-    }
+    char *prev_path = concat_strings(3, ".pit/", last_id, "/.prev");
 
-    _read_string(prev_path, current_id, COMMIT_ID_SIZE);
-    strcpy(last_id, current_id);  // Update last_id for the next iteration
+    fs_read_file(prev_path, current_id, COMMIT_ID_SIZE);
+    free(prev_path);
+
+    strcpy(last_id, current_id);
   }
   return 0;
 }
