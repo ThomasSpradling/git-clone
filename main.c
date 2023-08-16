@@ -78,6 +78,11 @@ int main(int argc, char **argv) {
     return pit_commit(argv[3]);
   }
 
+  // pit branch
+  if (strcmp(argv[1], "branch") == 0) {
+    return pit_branch();
+  }
+
   // pit status
   if (strcmp(argv[1], "status") == 0) {
     return pit_status();

@@ -132,14 +132,14 @@ int fs_cp(const char *src, const char *dest) {
   char buffer[1024];
   size_t bytes;
 
-  FILE *source = fs_open(src, "r");
-  FILE *dest = fs_open(dest, "w");
+  FILE *fsrc = fs_open(src, "r");
+  FILE *fdest = fs_open(dest, "w");
 
-  while ((bytes = fread(buffer, 1, sizeof(buffer), source)) > 0) {
-    fwrite(buffer, 1, bytes, dest);
+  while ((bytes = fread(buffer, 1, sizeof(buffer), fsrc)) > 0) {
+    fwrite(buffer, 1, bytes, fdest);
   }
 
-  fclose(source);
-  fclose(dest);
+  fclose(fdest);
+  fclose(fdest);
   return 0;
 }

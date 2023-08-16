@@ -8,12 +8,15 @@
 
 /* Usage: `pit init`
  *
- * Creates a `.pit` directory with created `.index` and `.prev` files
+ * Creates a `.pit` directory with created `.index`, `.prev`, `.current_branch`, and `.branches` files
  */
 int pit_init() {
   fs_mkdir(".pit");
   fs_write_file(".pit/.index", NULL);
   fs_write_file(".pit/.prev", BASE_COMMIT_ID);
+
+  fs_write_file(".pit/.branches", "master\n");
+  fs_write_file(".pit/.current_branch", "master");
   return 0;
 }
 
@@ -38,12 +41,10 @@ int pit_add(const char *filename) {
     // if we've seen this file before, stop process and throw error
     if (strcmp(line, filename) == 0) {
       fprintf(stderr, "ERROR: File %s is already tracked!\n", filename);
-
       fclose(findex);
       fclose(fnewindex);
       fs_rm(".pit/.newindex");
-      
-      return 1;
+      return 3;
     }
 
     fprintf(fnewindex, "%s\n", line);
@@ -98,6 +99,16 @@ int pit_rm(const char *filename) {
  * and the current .index and .prev files.
  */
 int pit_commit(const char *message) {
+  // Checks if on a head
+  char current_branch[BRANCHNAME_SIZE];
+  fs_read_file(".pit/.current_branch", current_branch, BRANCHNAME_SIZE);
+
+  if (strlen(current_branch) == 0) {
+    fprintf(stderr, "ERROR: Need to be on HEAD of a branch to commit\n");
+    return 1;
+  }
+
+  // Gets last id from .prev file and generates a new id
   char last_id[COMMIT_ID_BYTES + 1];
   fs_read_file(".pit/.prev", last_id, COMMIT_ID_BYTES + 1);
   
@@ -153,7 +164,7 @@ int pit_status() {
   while (fgets(line, sizeof(line), findex)) {
     strtok(line, "\n");
 
-    fprintf(stdout, "\t%s\n", line);
+    fprintf(stdout, "    %s\n", line);
     count++;
   }
 
@@ -178,7 +189,7 @@ int pit_log() {
     fs_read_file(message_path, current_message, MESSAGE_SIZE);
     free(message_path);
 
-    fprintf(stdout, "\t%s\n\n", current_message);
+    fprintf(stdout, "    %s\n\n", current_message);
 
     char *prev_path = concat_strings(3, ".pit/", last_id, "/.prev");
 
@@ -186,6 +197,29 @@ int pit_log() {
     free(prev_path);
 
     strcpy(last_id, current_id);
+  }
+  return 0;
+}
+
+/* `pit branch`
+ * 
+ * Prints all branches in order of creation (oldest to newest). Adds a star on current branch.
+ */
+int pit_branch() {
+  FILE *fbranch = fopen(".pit/.branches", "r");
+
+  char current_branch[BRANCHNAME_SIZE];
+  fs_read_file(".pit/.current_branch", current_branch, BRANCHNAME_SIZE);
+
+  char line[BRANCHNAME_SIZE];
+  while (fgets(line, sizeof(line), fbranch)) {
+    strtok(line, "\n");
+
+    char symbol = ' ';
+    if (strcmp(current_branch, line) == 0) {
+      symbol = '*';
+    }
+    fprintf(stdout, " %c %s\n", symbol, line);
   }
   return 0;
 }
