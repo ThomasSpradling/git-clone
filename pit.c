@@ -125,9 +125,7 @@ int pit_commit(const char *message) {
   char *next_id = generate_random_id();
 
   // Create new directory .pit/<new_id>
-  char new_dir[COMMIT_ID_SIZE + 5];
-  strcpy(new_dir, ".pit/");
-  strcat(new_dir, next_id);
+  char *new_dir = concat_strings(2, ".pit/", next_id);
   int result = mkdir(new_dir, 0777);
 
   if (result != 0) {
@@ -136,15 +134,11 @@ int pit_commit(const char *message) {
   }
 
   // Copy .pit/.index to .pit/<new_id>/.index
-  char dest_index[COMMIT_ID_SIZE + 12];
-  strcpy(dest_index, new_dir);
-  strcat(dest_index, "/.index");
+  char *dest_index = concat_strings(2, new_dir, "/.index");
   copy_file(".pit/.index", dest_index);
 
   // Copy .pit/.prev to .pit/<new_id>/.prev
-  char dest_prev[COMMIT_ID_SIZE + 11];
-  strcpy(dest_prev, new_dir);
-  strcat(dest_prev, "/.prev");
+  char *dest_prev = concat_strings(2, new_dir, "/.prev");
   copy_file(".pit/.prev", dest_prev);
 
   // Copy files listed in .pit/.index to .pit/<new_id> directory
@@ -152,38 +146,36 @@ int pit_commit(const char *message) {
   char line[FILENAME_SIZE];
   while (fgets(line, sizeof(line), findex)) {
     strtok(line, "\n");
-    char dest_path[COMMIT_ID_SIZE + FILENAME_SIZE + 10];
-    strcpy(dest_path, new_dir);
-    strcat(dest_path, "/");
-    strcat(dest_path, line);
+    char *dest_path = concat_strings(3, new_dir, "/", line);
     copy_file(line, dest_path);
+    free(dest_path);
   }
   fclose(findex);
 
   // Store the commit message in .pit/<new_id>/.message
-  char msg_path[COMMIT_ID_SIZE + 14];
-  strcpy(msg_path, new_dir);
-  strcat(msg_path, "/.message");
+  char *msg_path = concat_strings(2, new_dir, "/.message");
   FILE *fmsg = fopen(msg_path, "w");
-  if (!fmsg) {
-    perror("Error creating .message file");
+  FILE *fprev_overwrite = fopen(".pit/.prev", "w");
+  if (!fmsg || !fprev_overwrite) {
+    fprintf(stderr, "Error opening files.");
     free(next_id);
+    free(new_dir);
+    free(dest_index);
+    free(dest_prev);
+    free(msg_path);
     return 1;
   }
   fprintf(fmsg, "%s", message);
   fclose(fmsg);
 
-  // Overwrite the .pit/.prev with the new id
-  FILE *fprev_overwrite = fopen(".pit/.prev", "w");
-  if (!fprev_overwrite) {
-    fprintf(stderr, "Error opening .prev for overwriting");
-    free(next_id);
-    return 1;
-  }
   fprintf(fprev_overwrite, "%s", next_id);
 
   // clean up
   free(next_id);
+  free(new_dir);
+  free(dest_index);
+  free(dest_prev);
+  free(msg_path);
 
   return 0;
 }
