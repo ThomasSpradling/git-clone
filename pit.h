@@ -5,7 +5,7 @@ int pit_commit(const char *message);
 int pit_status();
 int pit_log();
 
-#define COMMIT_ID_BYTES 40  // Number of bytes in a commit id
+#define COMMIT_ID_BYTES 36  // Number of bytes in a commit id
 
 #define FILENAME_SIZE 512
 #define COMMIT_ID_SIZE (COMMIT_ID_BYTES + 1)
