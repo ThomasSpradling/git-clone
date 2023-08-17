@@ -109,7 +109,7 @@ static void fs_rm(const char *filename) {
     fprintf(stderr, "ERROR: Invalid file name!\n");
     exit(1);
   }
-  if (unlink(".pit/.newindex")) {
+  if (unlink(filename)) {
     fprintf(stderr, "ERROR: Could not delete file %s!\n", filename);
     exit(1);
   }
@@ -127,19 +127,43 @@ static void fs_mv(const char *src, const char *dest) {
   }
 }
 
+static void ensure_directory(const char *path) {
+  char tmp[1024];
+  char *p = NULL;
+
+  snprintf(tmp, sizeof(tmp), "%s", path);
+  for (p = tmp + 1; *p; p++) {
+    if (*p == '/') {
+        *p = 0;
+        mkdir(tmp, 0777);
+        *p = '/';
+    }
+  }
+}
+
 /* Copies file from src to dest. */
-int fs_cp(const char *src, const char *dest) {
+static void fs_cp(const char *src, const char *dest) {
   char buffer[1024];
   size_t bytes;
+
+  ensure_directory(dest);  // Ensure all directories in the path exist
 
   FILE *fsrc = fs_open(src, "r");
   FILE *fdest = fs_open(dest, "w");
 
   while ((bytes = fread(buffer, 1, sizeof(buffer), fsrc)) > 0) {
-    fwrite(buffer, 1, bytes, fdest);
+      fwrite(buffer, 1, bytes, fdest);
   }
 
+  fclose(fsrc);
   fclose(fdest);
-  fclose(fdest);
-  return 0;
+}
+
+/* Append string to end of file */
+static void fs_append_file(const char *filename, const char *string) {
+  FILE * findex = fs_open(filename, "a");
+  if (string) {
+    fprintf(findex, "%s\n", string);
+  }
+  fclose(findex);
 }

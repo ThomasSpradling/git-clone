@@ -33,4 +33,4 @@ Available commands:
 ## Progress
 - [x] ~~Initialization and tracking:~~ `init`, `add`, `status`, `rm`
 - [x] ~~Committing:~~ `commit`, `log`
-- [ ] Branching: `branch`, `checkout`
+- [x] ~~Branching:~~ `branch`, `checkout`

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include "pit.h"
 #include "utils.h"
 
@@ -144,7 +145,7 @@ int pit_commit(const char *message) {
   free(new_dir);
 
   fs_write_file(msg_path, message);
-  fs_write_file(".pit/prev", next_id);
+  fs_write_file(".pit/.prev", next_id);
   free(msg_path);
 
   return 0;
@@ -222,4 +223,157 @@ int pit_branch() {
     fprintf(stdout, " %c %s\n", symbol, line);
   }
   return 0;
+}
+
+
+/* Returns the branch number or -1 if the branch doesn't exist. */
+int get_branch_number(const char *branch_name) {
+  FILE *fbranches = fs_open(".pit/.branches", "r");
+
+  int counter = 0;
+  char line[BRANCHNAME_SIZE];
+  while(fgets(line, sizeof(line), fbranches)) {
+    strtok(line, "\n");
+    if (strcmp(line, branch_name) == 0) {
+      fclose(fbranches);
+      return counter;
+    }
+    counter++;
+  }
+  return -1;
+}
+
+/* Returns 1 if it does and 0 if not. */
+int does_commit_exist(const char *commit_id) {
+    DIR *dir = opendir(".pit");
+    if (dir == NULL) {
+        perror("Unable to open .pit directory");
+        return 0; // or consider exiting with an error code depending on the context
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // Check if it's a directory but not the "." or ".." directories
+        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            if (strcmp(entry->d_name, commit_id) == 0) {
+                closedir(dir);
+                return 1;
+            }
+        }
+    }
+    closedir(dir);
+    return 0;
+}
+
+int create_branch_file() {
+  char current_branch[BRANCHNAME_SIZE];
+  fs_read_file(".pit/.current_branch", current_branch, BRANCHNAME_SIZE);
+
+  if (strlen(current_branch)) {
+    char *current_branch_file = concat_strings(2, ".pit/.branch_", current_branch);
+    fs_cp(".pit/.prev", current_branch_file);
+    free(current_branch_file);
+  }
+  return 0;
+}
+
+/* `pit checkout <commit_id>` */
+int pit_checkout_commit(char *commit_id, int is_explicitly_called) {
+  // set .pit/.index to be "" and write id into .prev
+  if (strcmp(commit_id, BASE_COMMIT_ID) == 0) {
+    fs_write_file(".pit/.index", "");
+    fs_write_file(".pit/.prev", commit_id);
+    return 0;
+  }
+  
+  if (!does_commit_exist(commit_id)) {
+    fprintf(stderr, "ERROR: Commit id %s does not exist", commit_id);
+    return 1;
+  }
+
+  if (is_explicitly_called) {
+    // set HEAD of current branch to be the latest commit
+    create_branch_file();
+    fs_write_file(".pit/.current_branch", "");
+  }
+
+  // delete all the tracked files
+  FILE *findex = fs_open(".pit/.index", "r");
+
+  char line_old[FILENAME_SIZE + 1];
+  while (fgets(line_old, sizeof(line_old), findex)) {
+    strtok(line_old, "\n");
+
+    fs_rm(line_old);
+  }
+  fclose(findex);
+
+  // copy .pit/<commit_id>/.index to .pit/.index
+  char *fcommit_index = concat_strings(3, ".pit/", commit_id, "/.index");
+  fs_cp(fcommit_index, ".pit/.index");
+  free(fcommit_index);
+
+  // for each f in .pit/.index, copy .pit/<commit_id>/<f> to current directory <f>
+  FILE *past_files = fs_open(".pit/.index", "r");
+  char line_new[FILENAME_SIZE + 1];
+  while (fgets(line_new, sizeof(line_new), past_files)) {
+    strtok(line_new, "\n");
+
+    char *fcommit_file = concat_strings(4, ".pit/", commit_id, "/", line_new);
+    fs_cp(fcommit_file, line_new);
+    free(fcommit_file);
+  }
+  fclose(past_files);
+
+  // write id of current commit to .pit/.prev
+  fs_write_file(".pit/.prev", commit_id);
+  return 0;
+}
+
+/* `pit checkout <branch>` */
+int pit_checkout_branch(char *branch_name) {
+  if (get_branch_number(branch_name) == -1) {
+    fprintf(stderr, "ERROR: Branch name %s does not exist!", branch_name);
+    return 1;
+  }
+
+  // set HEAD of current branch to be the latest commit
+  create_branch_file();
+
+  // Set current branch to be this branch and read HEAD of this branch
+  char *branch_file = concat_strings(2, ".pit/.branch_", branch_name);
+  fs_write_file(".pit/.current_branch", branch_name);
+  char branch_head_commit_id[COMMIT_ID_SIZE + 1];
+  fs_read_file(branch_file, branch_head_commit_id, COMMIT_ID_SIZE + 1);
+  free(branch_file);
+
+  // checkout the commit representing the head
+  return pit_checkout_commit(branch_head_commit_id, 0);
+}
+
+/* `pit checkout -b <new_branch>` */
+int pit_create_branch(char *new_branch) {
+  if (get_branch_number(new_branch) != -1) {
+    fprintf(stderr, "ERROR: Branch name %s already exists!", new_branch);
+    return 1;
+  }
+
+  // set HEAD of current branch to be the latest commit
+  create_branch_file();
+
+  // add this branch to the list of branches and set HEAD of this branch to be
+  // latest commit
+  char *branch_file = concat_strings(2, ".pit/.branch_", new_branch);
+  FILE *fbranches = fs_open(".pit/.branches", "a");
+  fs_append_file(".pit/.branches", new_branch);
+  fs_cp(".pit/.prev", branch_file);
+
+  // Set current branch to be this branch and read HEAD of this branch
+  fs_write_file(".pit/.current_branch", new_branch);
+  char branch_head_commit_id[COMMIT_ID_SIZE + 1];
+  fs_read_file(branch_file, branch_head_commit_id, COMMIT_ID_SIZE + 1);
+  free(branch_file);
+
+  // checkout the commit representing the head
+  return pit_checkout_commit(branch_head_commit_id, 0);
 }

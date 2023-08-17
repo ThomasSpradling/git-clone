@@ -78,6 +78,34 @@ int main(int argc, char **argv) {
     return pit_commit(argv[3]);
   }
 
+  // pit checkout
+  if (strcmp(argv[1], "checkout") == 0) {
+    if (argc < 3) {
+      fprintf(stderr, "ERROR: Improper format. Usage: pit checkout <commit_id> | <branch> | (-b <newbranch>)\n");
+      return 1;
+    }
+
+    // When you want to create a new branch
+    if (argc == 4 && strcmp(argv[2], "-b") == 0) {
+      if (!argv[3] || strlen(argv[3]) > BRANCHNAME_SIZE) {
+        fprintf(stderr, "ERROR: Branch name must exist and have at most 10 characters!\n");
+        return 1;
+      }
+      return pit_create_branch(argv[3]);
+    }
+
+    // When you're checking out to a branch or commit
+    if (argc == 3) {
+      if (strlen(argv[2]) == COMMIT_ID_SIZE) {
+        return pit_checkout_commit(argv[2], 1);
+      } else if (strlen(argv[2]) <= BRANCHNAME_SIZE && strlen(argv[2]) > 0) {
+        return pit_checkout_branch(argv[2]);
+      } else {
+        fprintf(stderr, "ERROR: Invalid commit id or branch name!\n");
+      }
+    }
+  }
+
   // pit branch
   if (strcmp(argv[1], "branch") == 0) {
     return pit_branch();
